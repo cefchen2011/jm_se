@@ -43,6 +43,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -73,6 +74,9 @@ import java.io.File
 import kotlin.math.abs
 
 private val ReaderDark = Color(0xFF0F0F0F)
+
+/** 拼接前单页降采样的最大宽度（px），降低整章长图的内存峰值 */
+private const val MAX_PAGE_WIDTH = 1080
 
 @Composable
 fun ReaderScreen(navController: NavHostController) {
@@ -136,7 +140,7 @@ fun ReaderScreen(navController: NavHostController) {
     var stitchError by remember(chapterKey) { mutableStateOf<String?>(null) }
     var stitchRetry by remember { mutableStateOf(0) }
 
-    LaunchedEffect(chapterKey, scrambleId, images, stitchRetry) {
+    LaunchedEffect(chapterKey, stitchRetry) {
         if (images.isEmpty()) return@LaunchedEffect
         stitched = null
         stitchError = null
@@ -231,6 +235,7 @@ fun ReaderScreen(navController: NavHostController) {
                             .fillMaxWidth()
                             .onSizeChanged { baseSize = it }
                             .graphicsLayer {
+                                transformOrigin = TransformOrigin(0f, 0f)
                                 scaleX = scale
                                 scaleY = scale
                                 translationX = offset.x
@@ -368,14 +373,20 @@ private suspend fun loadPageBitmap(
         val result = loader.execute(request)
         val drawable = (result as? SuccessResult)?.drawable ?: return null
         val bmp = (drawable as? BitmapDrawable)?.bitmap ?: return null
-        val unscrambled = withContext(Dispatchers.Default) {
+        var out = withContext(Dispatchers.Default) {
             JmCrypto.unscramble(bmp, photoId, scrambleId, url)
+        } ?: bmp
+        if (out !== bmp) bmp.recycle()
+        // 降采样到最大宽度，降低整章拼接的内存峰值
+        if (out.width > MAX_PAGE_WIDTH) {
+            val ratio = MAX_PAGE_WIDTH.toFloat() / out.width
+            val newH = (out.height * ratio).toInt().coerceAtLeast(1)
+            val scaled = withContext(Dispatchers.Default) {
+                Bitmap.createScaledBitmap(out, MAX_PAGE_WIDTH, newH, true)
+            }
+            if (scaled !== out) out.recycle()
+            out = scaled
         }
-        if (unscrambled != null) {
-            if (unscrambled !== bmp) bmp.recycle()
-            unscrambled
-        } else {
-            bmp
-        }
+        out
     }.getOrNull()
 }
