@@ -1,8 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// 版本号统一由 version.properties 维护，每次 assemble 后自动递增小版本（patch）
+val versionPropsFile = rootProject.file("version.properties")
+val versionProps = Properties().apply {
+    if (versionPropsFile.exists()) versionPropsFile.inputStream().use { load(it) }
+}
+val appVersionCode = (versionProps.getProperty("versionCode") ?: "1").toInt()
+val appVersionName = versionProps.getProperty("versionName") ?: "1.0.0"
 
 android {
     namespace = "com.comicreader"
@@ -13,8 +23,8 @@ android {
         applicationId = "com.comicreader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     buildTypes {
@@ -74,4 +84,28 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix:0.8.8")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// 每次 assemble 完成后自动递增小版本（patch），供下一次编译使用
+val bumpPatchVersion = tasks.register("bumpPatchVersion") {
+    group = "build"
+    description = "递增 versionCode 与 versionName 的 patch 位"
+    doLast {
+        val code = (versionProps.getProperty("versionCode") ?: "1").toInt() + 1
+        val name = versionProps.getProperty("versionName") ?: "1.0.0"
+        val parts = name.split(".")
+        val bumped = if (parts.size >= 3) {
+            "${parts[0]}.${parts[1]}.${(parts[2].toIntOrNull() ?: 0) + 1}"
+        } else {
+            "$name.1"
+        }
+        versionPropsFile.writeText("versionCode=$code\nversionName=$bumped\n", Charsets.UTF_8)
+        println(">> 版本号已递增：$name -> $bumped (code=$code)")
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }.configureEach {
+        finalizedBy(bumpPatchVersion)
+    }
 }

@@ -75,6 +75,7 @@ fun CategoriesScreen(navController: NavHostController) {
                                 onDismiss = { longPressComic = null },
                                 onToggleFavorite = { vm.toggleFavorite(comic) },
                                 onBlock = { vm.blockComic(comic); longPressComic = null },
+                                onBlockAuthor = { vm.blockAuthor(comic.author); longPressComic = null },
                                 onViewAuthor = {
                                     longPressComic = null
                                     navController.navigate(Routes.author(comic.author))

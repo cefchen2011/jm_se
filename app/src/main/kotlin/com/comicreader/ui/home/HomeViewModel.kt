@@ -34,6 +34,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** 已读完 + 已屏蔽的漫画 id（主页不再展示） */
     private val hiddenIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /** 已屏蔽的作者名 */
+    private val blockedAuthors = MutableStateFlow<Set<String>>(emptySet())
+
     init {
         viewModelScope.launch {
             store.favoritesFlow().collect { favs ->
@@ -49,6 +52,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     b.map { it.id }.toSet()
             }.collect { hiddenIds.value = it }
         }
+        viewModelScope.launch {
+            store.blockedAuthorsFlow().collect { a ->
+                blockedAuthors.value = a.toSet()
+                _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.author in blockedAuthors.value }) }
+            }
+        }
         refresh()
     }
 
@@ -61,7 +70,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 page = 1
                 _uiState.update {
                     it.copy(
-                        comics = comics.filterNot { c -> c.id in hiddenIds.value },
+                        comics = comics.filterNot { c -> c.id in hiddenIds.value || c.author in blockedAuthors.value },
                         hotTags = tags,
                         refreshing = false,
                         loading = false,
@@ -84,7 +93,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 page++
                 _uiState.update {
                     it.copy(
-                        comics = it.comics + next.filterNot { c -> c.id in hiddenIds.value },
+                        comics = it.comics + next.filterNot { c -> c.id in hiddenIds.value || c.author in blockedAuthors.value },
                         loadingMore = false,
                         endReached = next.isEmpty()
                     )
@@ -107,6 +116,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.addBlocked(comic)
             _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.id == comic.id }) }
+        }
+    }
+
+    /** 屏蔽某作者的全部作品，立即从当前列表移除 */
+    fun blockAuthor(author: String) {
+        viewModelScope.launch {
+            store.addBlockedAuthor(author)
+            _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.author == author }) }
         }
     }
 }

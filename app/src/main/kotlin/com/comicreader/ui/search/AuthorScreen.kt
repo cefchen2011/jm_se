@@ -18,6 +18,7 @@ import com.comicreader.ui.Routes
 import com.comicreader.ui.components.AppTopBar
 import com.comicreader.ui.components.ComicContextMenu
 import com.comicreader.ui.components.ComicGrid
+import com.comicreader.ui.components.EmptyBox
 import com.comicreader.ui.components.ErrorBox
 import com.comicreader.ui.components.LoadingBox
 
@@ -40,6 +41,7 @@ fun AuthorScreen(navController: NavHostController) {
         when {
             state.loading -> LoadingBox()
             state.error != null && state.comics.isEmpty() -> ErrorBox(state.error) { vm.load(author) }
+            state.comics.isEmpty() -> EmptyBox("暂无作品")
             else -> Box(Modifier.fillMaxSize()) {
                 ComicGrid(
                     comics = state.comics,
@@ -57,6 +59,7 @@ fun AuthorScreen(navController: NavHostController) {
                         onDismiss = { longPressComic = null },
                         onToggleFavorite = { vm.toggleFavorite(comic) },
                         onBlock = { vm.blockComic(comic); longPressComic = null },
+                        onBlockAuthor = { vm.blockAuthor(comic.author); longPressComic = null },
                         onViewAuthor = {
                             longPressComic = null
                             navController.navigate(Routes.author(comic.author))

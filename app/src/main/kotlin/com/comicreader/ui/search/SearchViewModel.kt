@@ -36,6 +36,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     /** 已屏蔽的漫画 id */
     private val blockedIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /** 已屏蔽的作者名 */
+    private val blockedAuthors = MutableStateFlow<Set<String>>(emptySet())
+
     init {
         viewModelScope.launch {
             store.favoritesFlow().collect { favs ->
@@ -46,6 +49,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             store.blockedFlow().collect { b ->
                 blockedIds.value = b.map { it.id }.toSet()
                 _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.id in blockedIds.value }) }
+            }
+        }
+        viewModelScope.launch {
+            store.blockedAuthorsFlow().collect { a ->
+                blockedAuthors.value = a.toSet()
+                _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.author in blockedAuthors.value }) }
             }
         }
         viewModelScope.launch {
@@ -94,7 +103,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 _uiState.update {
                     it.copy(
                         loading = false,
-                        comics = comics.filterNot { c -> c.id in blockedIds.value },
+                        comics = comics.filterNot { c -> c.id in blockedIds.value || c.author in blockedAuthors.value },
                         endReached = comics.isEmpty()
                     )
                 }
@@ -114,7 +123,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 page++
                 _uiState.update {
                     it.copy(
-                        comics = it.comics + next.filterNot { c -> c.id in blockedIds.value },
+                        comics = it.comics + next.filterNot { c -> c.id in blockedIds.value || c.author in blockedAuthors.value },
                         loadingMore = false,
                         endReached = next.isEmpty()
                     )
@@ -137,6 +146,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.addBlocked(comic)
             _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.id == comic.id }) }
+        }
+    }
+
+    /** 屏蔽某作者的全部作品，立即从当前列表移除 */
+    fun blockAuthor(author: String) {
+        viewModelScope.launch {
+            store.addBlockedAuthor(author)
+            _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.author == author }) }
         }
     }
 }

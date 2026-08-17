@@ -25,9 +25,11 @@ class FavoritesStore(context: Context) {
     private val keyFavorites = stringPreferencesKey("favorites")
     private val keyHistory = stringPreferencesKey("history")
     private val keyBlocked = stringPreferencesKey("blocked")
+    private val keyBlockedAuthors = stringPreferencesKey("blocked_authors")
 
     private val comicType = object : TypeToken<List<Comic>>() {}.type
     private val historyType = object : TypeToken<List<HistoryEntry>>() {}.type
+    private val stringListType = object : TypeToken<List<String>>() {}.type
 
     fun favoritesFlow(): Flow<List<Comic>> =
         appContext.dataStore.data.map { p ->
@@ -96,6 +98,27 @@ class FavoritesStore(context: Context) {
         }
     }
 
+    fun blockedAuthorsFlow(): Flow<List<String>> =
+        appContext.dataStore.data.map { p ->
+            p[keyBlockedAuthors]?.let { runCatching { gson.fromJson<List<String>>(it, stringListType) }.getOrNull() } ?: emptyList()
+        }
+
+    suspend fun addBlockedAuthor(author: String) {
+        appContext.dataStore.edit { p ->
+            val cur = p[keyBlockedAuthors]?.let { runCatching { gson.fromJson<List<String>>(it, stringListType) }.getOrNull() } ?: emptyList()
+            if (cur.none { it == author }) {
+                p[keyBlockedAuthors] = gson.toJson(listOf(author) + cur)
+            }
+        }
+    }
+
+    suspend fun removeBlockedAuthor(author: String) {
+        appContext.dataStore.edit { p ->
+            val cur = p[keyBlockedAuthors]?.let { runCatching { gson.fromJson<List<String>>(it, stringListType) }.getOrNull() } ?: emptyList()
+            p[keyBlockedAuthors] = gson.toJson(cur.filterNot { it == author })
+        }
+    }
+
     // ---------- 数据导出 / 导入 ----------
 
     /** 导出全部数据（收藏 + 历史 + 屏蔽）为 JSON 字符串 */
@@ -103,11 +126,13 @@ class FavoritesStore(context: Context) {
         val favs = favoritesFlow().first()
         val hist = historyFlow().first()
         val blocked = blockedFlow().first()
+        val blockedAuthors = blockedAuthorsFlow().first()
         val obj = JsonObject()
         obj.addProperty("version", 1)
         obj.add("favorites", gson.toJsonTree(favs))
         obj.add("history", gson.toJsonTree(hist))
         obj.add("blocked", gson.toJsonTree(blocked))
+        obj.add("blockedAuthors", gson.toJsonTree(blockedAuthors))
         return gson.toJson(obj)
     }
 
@@ -121,10 +146,12 @@ class FavoritesStore(context: Context) {
         val favs = obj["favorites"]?.let { runCatching { gson.fromJson<List<Comic>>(it, comicType) }.getOrNull() } ?: emptyList()
         val hist = obj["history"]?.let { runCatching { gson.fromJson<List<HistoryEntry>>(it, historyType) }.getOrNull() } ?: emptyList()
         val blocked = obj["blocked"]?.let { runCatching { gson.fromJson<List<Comic>>(it, comicType) }.getOrNull() } ?: emptyList()
+        val blockedAuthors = obj["blockedAuthors"]?.let { runCatching { gson.fromJson<List<String>>(it, stringListType) }.getOrNull() } ?: emptyList()
         appContext.dataStore.edit { p ->
             p[keyFavorites] = gson.toJson(favs)
             p[keyHistory] = gson.toJson(hist)
             p[keyBlocked] = gson.toJson(blocked)
+            p[keyBlockedAuthors] = gson.toJson(blockedAuthors)
         }
     }
 }
