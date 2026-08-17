@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,8 +76,11 @@ import kotlin.math.abs
 
 private val ReaderDark = Color(0xFF0F0F0F)
 
-/** 拼接前单页降采样的最大宽度（px），降低整章长图的内存峰值 */
+/** 拼接前单页降采样的最大宽度（px） */
 private const val MAX_PAGE_WIDTH = 1080
+
+/** 单段长图的最大高度（px），避免超过 GPU 纹理尺寸上限导致黑屏 */
+private const val MAX_SEGMENT_HEIGHT = 4096
 
 @Composable
 fun ReaderScreen(navController: NavHostController) {
@@ -135,25 +139,33 @@ fun ReaderScreen(navController: NavHostController) {
     val scrambleId = current?.scrambleId ?: ""
     val chapterKey = current?.id ?: ""
 
-    // 拼接整章为一张长图（同步缩放的基础）
-    var stitched by remember(chapterKey) { mutableStateOf<ImageBitmap?>(null) }
-    var stitchError by remember(chapterKey) { mutableStateOf<String?>(null) }
+    // 拼接结果：多段长图（每段高度受限），共享缩放实现同步缩放
+    var segments by remember { mutableStateOf<List<ImageBitmap>>(emptyList()) }
+    var stripWidth by remember { mutableStateOf(1) }
+    var stripTotalHeight by remember { mutableStateOf(0) }
+    var stitchError by remember { mutableStateOf<String?>(null) }
     var stitchRetry by remember { mutableStateOf(0) }
 
     LaunchedEffect(chapterKey, stitchRetry) {
         if (images.isEmpty()) return@LaunchedEffect
-        stitched = null
+        segments = emptyList()
         stitchError = null
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val cacheStore = ComicCacheStore(context)
                 val chapterDir = cacheStore.chapterDirOf(comicId, chapterId)
-                stitchChapter(context, images, photoId, scrambleId, chapterDir)
+                buildStrip(context, images, photoId, scrambleId, chapterDir)
             }
         }
         result.fold(
-            onSuccess = { bmp ->
-                if (bmp != null) stitched = bmp.asImageBitmap() else stitchError = "图片加载失败"
+            onSuccess = { strip ->
+                if (strip != null && strip.segments.isNotEmpty()) {
+                    segments = strip.segments.map { it.asImageBitmap() }
+                    stripWidth = strip.width
+                    stripTotalHeight = strip.totalHeight
+                } else {
+                    stitchError = "图片加载失败"
+                }
             },
             onFailure = { e -> stitchError = e.message }
         )
@@ -163,7 +175,6 @@ fun ReaderScreen(navController: NavHostController) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
-    var baseSize by remember { mutableStateOf(IntSize.Zero) }
 
     LaunchedEffect(chapterKey) {
         scale = 1f
@@ -175,7 +186,7 @@ fun ReaderScreen(navController: NavHostController) {
             state.loading -> LoadingBox()
             state.error != null -> ErrorBox(state.error) { vm.load(comicId, chapterId, sort) }
             stitchError != null -> ErrorBox(stitchError) { stitchRetry++ }
-            stitched == null -> LoadingBox()
+            segments.isEmpty() -> LoadingBox()
             else -> {
                 Box(
                     Modifier
@@ -215,7 +226,7 @@ fun ReaderScreen(navController: NavHostController) {
                                         // 以捏合中心为锚点缩放，再叠加平移，最后钳制在边界内
                                         offset = centroid + panChange - (centroid - offset) * (newScale / oldScale)
                                         scale = newScale
-                                        offset = clampOffset(offset, scale, containerSize, baseSize)
+                                        offset = clampOffset(offset, scale, containerSize, stripWidth, stripTotalHeight)
                                         event.changes.forEach { it.consume() }
                                     }
                                 } while (event.changes.any { it.pressed })
@@ -227,21 +238,27 @@ fun ReaderScreen(navController: NavHostController) {
                             }
                         }
                 ) {
-                    Image(
-                        bitmap = stitched!!,
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onSizeChanged { baseSize = it }
-                            .graphicsLayer {
-                                transformOrigin = TransformOrigin(0f, 0f)
-                                scaleX = scale
-                                scaleY = scale
-                                translationX = offset.x
-                                translationY = offset.y
-                            }
-                    )
+                    Column(Modifier.fillMaxWidth()) {
+                        var cumulative = 0
+                        segments.forEach { seg ->
+                            val stripY = containerSize.width.toFloat() / stripWidth * cumulative
+                            Image(
+                                bitmap = seg,
+                                contentDescription = null,
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .graphicsLayer {
+                                        transformOrigin = TransformOrigin(0f, 0f)
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = offset.x
+                                        translationY = stripY * (scale - 1f) + offset.y
+                                    }
+                            )
+                            cumulative += seg.height
+                        }
+                    }
                 }
             }
         }
@@ -309,23 +326,30 @@ fun ReaderScreen(navController: NavHostController) {
 }
 
 /** 偏移钳制：让长图始终铺满视口、不露出空白边缘（左上对齐，初始即顶部） */
-private fun clampOffset(offset: Offset, scale: Float, container: IntSize, base: IntSize): Offset {
-    if (base.width <= 0 || base.height <= 0 || container.width <= 0 || container.height <= 0) {
+private fun clampOffset(
+    offset: Offset,
+    scale: Float,
+    container: IntSize,
+    stripWidth: Int,
+    stripTotalHeight: Int
+): Offset {
+    if (container.width <= 0 || container.height <= 0 || stripWidth <= 0 || stripTotalHeight <= 0) {
         return Offset.Zero
     }
-    val minX = (container.width - base.width * scale).coerceAtMost(0f)
-    val minY = (container.height - base.height * scale).coerceAtMost(0f)
+    val baseH = container.width.toFloat() / stripWidth * stripTotalHeight
+    val minX = (container.width - container.width * scale).coerceAtMost(0f)
+    val minY = (container.height - baseH * scale).coerceAtMost(0f)
     return Offset(offset.x.coerceIn(minX, 0f), offset.y.coerceIn(minY, 0f))
 }
 
-/** 把整章所有页拼成一张竖向长图，逐页加载后立即回收，减少内存峰值 */
-private suspend fun stitchChapter(
+/** 把整章所有页拼成多段竖向长图，逐页加载后立即回收，控制每段高度与内存 */
+private suspend fun buildStrip(
     context: android.content.Context,
     images: List<PageImage>,
     photoId: String,
     scrambleId: String,
     chapterDir: File
-): Bitmap? {
+): StitchedStrip? {
     if (images.isEmpty()) return null
     val bitmaps = ArrayList<Bitmap>(images.size)
     try {
@@ -339,21 +363,46 @@ private suspend fun stitchChapter(
         if (bitmaps.isEmpty()) return null
 
         val width = bitmaps.maxOf { it.width }
-        val totalHeight = bitmaps.sumOf { it.height }
-        val stitched = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.RGB_565)
-        val canvas = Canvas(stitched)
-        var y = 0
+        val segments = ArrayList<Bitmap>()
+        var current = ArrayList<Bitmap>()
+        var currentHeight = 0
         for (bmp in bitmaps) {
-            canvas.drawBitmap(bmp, (width - bmp.width) / 2f, y.toFloat(), null)
-            y += bmp.height
-            bmp.recycle()
+            if (current.isNotEmpty() && currentHeight + bmp.height > MAX_SEGMENT_HEIGHT) {
+                segments.add(mergeSegment(current, width))
+                current = ArrayList()
+                currentHeight = 0
+            }
+            current.add(bmp)
+            currentHeight += bmp.height
         }
-        return stitched
+        if (current.isNotEmpty()) segments.add(mergeSegment(current, width))
+        bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+        return StitchedStrip(segments, width, segments.sumOf { it.height })
     } catch (e: Exception) {
         bitmaps.forEach { if (!it.isRecycled) it.recycle() }
         return null
     }
 }
+
+/** 把若干页合并为一段（同一宽度，居中对齐），并回收各页位图 */
+private fun mergeSegment(bitmaps: List<Bitmap>, width: Int): Bitmap {
+    val totalHeight = bitmaps.sumOf { it.height }
+    val segment = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.RGB_565)
+    val canvas = Canvas(segment)
+    var y = 0
+    for (bmp in bitmaps) {
+        canvas.drawBitmap(bmp, (width - bmp.width) / 2f, y.toFloat(), null)
+        y += bmp.height
+        bmp.recycle()
+    }
+    return segment
+}
+
+private data class StitchedStrip(
+    val segments: List<Bitmap>,
+    val width: Int,
+    val totalHeight: Int
+)
 
 /** 加载单页图片（优先本地缓存，必要时去扰码），返回 null 表示该页加载失败 */
 private suspend fun loadPageBitmap(
@@ -377,12 +426,17 @@ private suspend fun loadPageBitmap(
             JmCrypto.unscramble(bmp, photoId, scrambleId, url)
         } ?: bmp
         if (out !== bmp) bmp.recycle()
-        // 降采样到最大宽度，降低整章拼接的内存峰值
-        if (out.width > MAX_PAGE_WIDTH) {
-            val ratio = MAX_PAGE_WIDTH.toFloat() / out.width
+        // 降采样，同时限制宽高，降低内存峰值、避免单页过高
+        if (out.width > MAX_PAGE_WIDTH || out.height > MAX_SEGMENT_HEIGHT) {
+            val ratio = minOf(
+                MAX_PAGE_WIDTH.toFloat() / out.width,
+                MAX_SEGMENT_HEIGHT.toFloat() / out.height,
+                1f
+            )
+            val newW = (out.width * ratio).toInt().coerceAtLeast(1)
             val newH = (out.height * ratio).toInt().coerceAtLeast(1)
             val scaled = withContext(Dispatchers.Default) {
-                Bitmap.createScaledBitmap(out, MAX_PAGE_WIDTH, newH, true)
+                Bitmap.createScaledBitmap(out, newW, newH, true)
             }
             if (scaled !== out) out.recycle()
             out = scaled
