@@ -4,26 +4,28 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -40,12 +42,12 @@ import com.comicreader.ui.components.EmptyBox
 import com.comicreader.ui.components.ErrorBox
 import com.comicreader.ui.components.LoadingBox
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(navController: NavHostController) {
     val vm: SearchViewModel = viewModel()
     val state by vm.uiState.collectAsStateWithLifecycle()
     var longPressComic by remember { mutableStateOf<Comic?>(null) }
+    var jmId by rememberSaveable { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize()) {
         AppTopBar(title = "搜索")
@@ -65,6 +67,33 @@ fun SearchScreen(navController: NavHostController) {
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { vm.submit() })
         )
+        // JM 号直达
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = jmId,
+                onValueChange = { jmId = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("JM号") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = {
+                    val id = jmId.trim()
+                    if (id.isNotBlank()) navController.navigate(Routes.detail(id))
+                })
+            )
+            FilledTonalButton(
+                onClick = {
+                    val id = jmId.trim()
+                    if (id.isNotBlank()) navController.navigate(Routes.detail(id))
+                },
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                Text("打开")
+            }
+        }
 
         when {
             state.loading -> LoadingBox()
@@ -92,7 +121,14 @@ fun SearchScreen(navController: NavHostController) {
             }
             state.hasSearched && state.comics.isEmpty() -> EmptyBox("没有找到相关漫画")
             else -> Box(Modifier.fillMaxSize()) {
-                ComicGrid(
+                Column(Modifier.fillMaxSize()) {
+                    Text(
+                        text = "共 ${state.comics.size} 个结果",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ComicGrid(
                     comics = state.comics,
                     onClick = { navController.navigate(Routes.detail(it.id)) },
                     onLongClick = { longPressComic = it },
@@ -101,6 +137,7 @@ fun SearchScreen(navController: NavHostController) {
                     onLoadMore = vm::loadMore,
                     modifier = Modifier.fillMaxSize()
                 )
+                }
                 longPressComic?.let { comic ->
                     ComicContextMenu(
                         comic = comic,

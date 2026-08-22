@@ -61,8 +61,11 @@ fun AuthorScreen(navController: NavHostController) {
                         onBlock = { vm.blockComic(comic); longPressComic = null },
                         onBlockAuthor = { vm.blockAuthor(comic.author); longPressComic = null },
                         onViewAuthor = {
+                            val targetAuthor = comic.author
                             longPressComic = null
-                            navController.navigate(Routes.author(comic.author))
+                            if (targetAuthor.isNotBlank()) {
+                                navController.navigate(Routes.author(targetAuthor))
+                            }
                         }
                     )
                 }

@@ -1,6 +1,8 @@
 package com.comicreader.ui.favorites
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,14 +47,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
+import com.comicreader.data.model.Comic
 import com.comicreader.data.model.HistoryEntry
 import com.comicreader.ui.Routes
 import com.comicreader.ui.components.AppTopBar
+import com.comicreader.ui.components.ComicContextMenu
 import com.comicreader.ui.components.EmptyBox
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryScreen(navController: NavHostController) {
     val vm: FavoritesViewModel = viewModel()
@@ -60,6 +65,7 @@ fun HistoryScreen(navController: NavHostController) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<HistoryEntry?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
+    var longPressEntry by remember { mutableStateOf<HistoryEntry?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         AppTopBar(
@@ -119,16 +125,72 @@ fun HistoryScreen(navController: NavHostController) {
                 if (filtered.isEmpty()) {
                     item { EmptyBox("没有匹配的记录", Modifier.padding(vertical = 48.dp)) }
                 } else {
-                    items(filtered, key = { it.comicId + it.chapterId }) { h ->
-                        HistoryRow(
-                            entry = h,
-                            onClick = { navController.navigate(Routes.reader(h.comicId, h.chapterId, h.sort)) },
-                            onDelete = { pendingDelete = h }
-                        )
-                        HorizontalDivider()
+                    val unfinished = filtered.filter { !it.finished }
+                    val finished = filtered.filter { it.finished }
+                    if (unfinished.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "未读完（${unfinished.size}）",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
+                        }
+                        items(unfinished, key = { it.comicId + it.chapterId }) { h ->
+                            HistoryRow(
+                                entry = h,
+                                onClick = { navController.navigate(Routes.reader(h.comicId, h.chapterId, h.sort)) },
+                                onLongClick = { longPressEntry = h },
+                                onDelete = { pendingDelete = h }
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                    if (finished.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "已读完（${finished.size}）",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
+                        }
+                        items(finished, key = { it.comicId + "f" + it.chapterId }) { h ->
+                            HistoryRow(
+                                entry = h,
+                                onClick = { navController.navigate(Routes.reader(h.comicId, h.chapterId, h.sort)) },
+                                onLongClick = { longPressEntry = h },
+                                onDelete = { pendingDelete = h }
+                            )
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
+        }
+    }
+
+    // 长按菜单
+    longPressEntry?.let { entry ->
+        val author = entry.author.trim().removeSurrounding("[\"", "\"]").removeSurrounding("[", "]")
+        val comic = Comic(entry.comicId, entry.comicName, author, cover = entry.cover)
+        Box(Modifier.fillMaxSize()) {
+            ComicContextMenu(
+                comic = comic,
+                isFavorite = comic.id in state.favoriteIds,
+                isFollowed = author in state.followedAuthors,
+                onDismiss = { longPressEntry = null },
+                onToggleFavorite = { vm.toggleFavorite(comic); longPressEntry = null },
+                onBlock = { vm.blockComic(comic); longPressEntry = null },
+                onBlockAuthor = { vm.blockAuthor(author); longPressEntry = null },
+                onToggleFollow = { vm.toggleFollowAuthor(author); longPressEntry = null },
+                onViewDetail = {
+                    longPressEntry = null
+                    navController.navigate(Routes.detail(comic.id))
+                },
+                onViewAuthor = {
+                    longPressEntry = null
+                    navController.navigate(Routes.author(author))
+                }
+            )
         }
     }
 
@@ -167,14 +229,19 @@ fun HistoryScreen(navController: NavHostController) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryRow(
     entry: HistoryEntry,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, top = 8.dp, bottom = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(start = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
@@ -202,11 +269,20 @@ private fun HistoryRow(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(2.dp))
-            Text(
-                text = formatRelativeTime(entry.timestamp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val chapNum = entry.sort + 1
+                val pageNum = entry.currentPage + 1
+                val singleChapter = entry.totalChapters <= 1
+                val pageStr = if (entry.totalPages > 0) "章 ${pageNum}/${entry.totalPages}" else "章 ${chapNum}/${entry.totalChapters}"
+                val suffix = if (entry.finished) "  · ✓ 已读完"
+                    else if (!singleChapter) "  · 书 ${chapNum}/${entry.totalChapters}"
+                    else ""
+                Text(
+                    text = "${pageStr}${suffix}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (entry.finished) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         IconButton(onClick = onDelete) {
             Icon(

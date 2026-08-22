@@ -76,13 +76,15 @@ fun HomeScreen(navController: NavHostController) {
                     ComicContextMenu(
                         comic = comic,
                         isFavorite = comic.id in state.favoriteIds,
+                        isFollowed = comic.author in state.followedAuthorIds,
                         onDismiss = { longPressComic = null },
                         onToggleFavorite = { vm.toggleFavorite(comic) },
                         onBlock = { vm.blockComic(comic); longPressComic = null },
                         onBlockAuthor = { vm.blockAuthor(comic.author); longPressComic = null },
+                        onToggleFollow = { vm.toggleFollowAuthor(comic.author); longPressComic = null },
                         onViewAuthor = {
                             longPressComic = null
-                            navController.navigate(Routes.author(comic.author))
+                            navController.navigate(Routes.author(comic.author)) { launchSingleTop = true }
                         }
                     )
                 }

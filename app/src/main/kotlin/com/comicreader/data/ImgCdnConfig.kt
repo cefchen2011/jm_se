@@ -12,8 +12,12 @@ object ImgCdnConfig {
 
     /** 可选 CDN 域名（index 对应设置项顺序） */
     val domains: List<String> = listOf(
-        "cdn-msp.jmdanjonproxy.vip", // 已验证可达（image/webp 正常返回）
-        "cdn-msp2.jmapiproxy3.cc"    // 已验证可达（image/webp 正常返回）
+        "cdn-msp.jmdanjonproxy.vip",
+        "cdn-msp2.jmapiproxy3.cc",
+        "www.cdnhjk.net",
+        "www.cdngwc.cc",
+        "www.cdngwc.net",
+        "www.cdngwc.club"
     )
 
     /** 当前选中 index（由 MainActivity 从 DataStore 同步） */

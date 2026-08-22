@@ -32,6 +32,7 @@ import androidx.navigation.NavHostController
 import com.comicreader.data.model.Comic
 import com.comicreader.ui.Routes
 import com.comicreader.ui.components.AppTopBar
+import com.comicreader.ui.components.ComicContextMenu
 import com.comicreader.ui.components.ComicGrid
 import com.comicreader.ui.components.EmptyBox
 
@@ -89,21 +90,24 @@ fun FavoritesScreen(navController: NavHostController) {
                             modifier = Modifier.fillMaxSize()
                         )
                         longPressComic?.let { comic ->
-                            DropdownMenu(
-                                expanded = true,
-                                onDismissRequest = { longPressComic = null }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("取消收藏") },
-                                    leadingIcon = {
-                                        Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
-                                    },
-                                    onClick = {
-                                        vm.removeFavorite(comic.id)
-                                        longPressComic = null
-                                    }
-                                )
-                            }
+                            ComicContextMenu(
+                                comic = comic,
+                                isFavorite = true,
+                                isFollowed = comic.author in state.followedAuthors,
+                                onDismiss = { longPressComic = null },
+                                onToggleFavorite = { vm.removeFavorite(comic.id); longPressComic = null },
+                                onBlock = { vm.blockComic(comic); longPressComic = null },
+                                onBlockAuthor = { vm.blockAuthor(comic.author); longPressComic = null },
+                                onToggleFollow = { vm.toggleFollowAuthor(comic.author); longPressComic = null },
+                                onViewDetail = {
+                                    longPressComic = null
+                                    navController.navigate(Routes.detail(comic.id))
+                                },
+                                onViewAuthor = {
+                                    longPressComic = null
+                                    navController.navigate(Routes.author(comic.author))
+                                }
+                            )
                         }
                     }
                 }

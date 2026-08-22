@@ -48,7 +48,12 @@ data class Category(
     val name: String
 )
 
-/** 阅读进度记录 */
+/**
+ * 阅读进度记录
+ * @param totalChapters 该漫画总章节数（用于计算书进度百分比）
+ * @param currentPage 当前阅读到的页码（0-based），-1 表示整章已读完
+ * @param totalPages 当前章节总页数
+ */
 data class HistoryEntry(
     val comicId: String,
     val comicName: String,
@@ -58,8 +63,11 @@ data class HistoryEntry(
     val chapterName: String,
     val sort: Int = 0,
     val timestamp: Long = System.currentTimeMillis(),
-    /** 是否已读完最后一章（用于主页隐藏已读完成的作品） */
-    val finished: Boolean = false
+    /** 是否已读完最后一章 */
+    val finished: Boolean = false,
+    val totalChapters: Int = 0,
+    val currentPage: Int = 0,
+    val totalPages: Int = 0
 )
 
 /** 缓存漫画元数据 */

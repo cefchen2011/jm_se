@@ -61,6 +61,7 @@ import com.comicreader.ui.Routes
 import com.comicreader.ui.components.AppTopBar
 import com.comicreader.ui.components.ErrorBox
 import com.comicreader.ui.components.LoadingBox
+import com.comicreader.ui.search.SearchBus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,7 +159,10 @@ fun DetailScreen(navController: NavHostController) {
                             }
                         }
                     }
-                    item { DetailHeader(d, state.history) { navController.navigate(Routes.reader(d.id, it.id, it.sort)) } }
+                    item { DetailHeader(d, state.history, onTagClick = { tag ->
+                        SearchBus.pendingQuery.value = tag
+                        navController.navigate("search") { launchSingleTop = true }
+                    }) { navController.navigate(Routes.reader(d.id, it.id, it.sort)) } }
                     if (d.chapters.isNotEmpty()) {
                         item {
                             Text(
@@ -215,6 +219,7 @@ fun DetailScreen(navController: NavHostController) {
 private fun DetailHeader(
     detail: com.comicreader.data.model.ComicDetail,
     history: com.comicreader.data.model.HistoryEntry?,
+    onTagClick: (String) -> Unit,
     onOpenChapter: (Chapter) -> Unit
 ) {
     Column(Modifier.padding(16.dp)) {
@@ -260,7 +265,7 @@ private fun DetailHeader(
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 detail.tags.forEach { tag ->
-                    AssistChip(onClick = {}, label = { Text(tag) })
+                    AssistChip(onClick = { onTagClick(tag) }, label = { Text(tag) })
                 }
             }
         }
@@ -301,7 +306,7 @@ private fun RelatedRow(related: List<Comic>, onClick: (Comic) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(related, key = { it.id }) { comic ->
-            Column(Modifier.width(110.dp)) {
+            Column(Modifier.width(110.dp).clickable { onClick(comic) }) {
                 AsyncImage(
                     model = comic.cover,
                     contentDescription = comic.name,
@@ -316,8 +321,7 @@ private fun RelatedRow(related: List<Comic>, onClick: (Comic) -> Unit) {
                     text = comic.name,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable { onClick(comic) }
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +54,12 @@ fun MeScreen(navController: NavHostController) {
             icon = Icons.Filled.Download,
             label = "缓存",
             onClick = { navController.navigate(Routes.ME_CACHE) }
+        )
+        HorizontalDivider()
+        MeItem(
+            icon = Icons.Filled.Star,
+            label = "关注作者",
+            onClick = { navController.navigate(Routes.ME_FOLLOWED) }
         )
         HorizontalDivider()
         MeItem(

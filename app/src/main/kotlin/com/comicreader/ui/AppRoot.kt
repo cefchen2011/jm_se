@@ -26,6 +26,7 @@ import com.comicreader.ui.components.NavTab
 import com.comicreader.ui.detail.DetailScreen
 import com.comicreader.ui.favorites.BlockedScreen
 import com.comicreader.ui.favorites.FavoritesScreen
+import com.comicreader.ui.favorites.FollowedAuthorsScreen
 import com.comicreader.ui.favorites.HistoryScreen
 import com.comicreader.ui.favorites.MeScreen
 import com.comicreader.ui.home.HomeScreen
@@ -54,6 +55,7 @@ object Routes {
     const val ME_BLOCKED = "me/blocked"
     const val ME_CACHE = "me/cache"
     const val ME_SETTINGS = "me/settings"
+    const val ME_FOLLOWED = "me/followed"
 
     fun detail(comicId: String) = "detail/$comicId"
     fun reader(comicId: String, chapterId: String, sort: Int) = "reader/$comicId/$chapterId/$sort"
@@ -102,6 +104,7 @@ fun AppRoot() {
             composable(Routes.ME_BLOCKED) { BlockedScreen(navController) }
             composable(Routes.ME_CACHE) { CacheScreen(navController) }
             composable(Routes.ME_SETTINGS) { SettingsScreen(navController) }
+            composable(Routes.ME_FOLLOWED) { FollowedAuthorsScreen(navController) }
 
             composable(
                 route = Routes.AUTHOR,

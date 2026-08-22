@@ -86,11 +86,13 @@ class AuthorViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val next = repo.search(author, "mr", page + 1)
                 page++
+                val existingIds = _uiState.value.comics.map { c -> c.id }.toSet()
+                val newComics = next.filterNot { c -> c.id in existingIds || c.id in blockedIds.value || c.author in blockedAuthors.value }
                 _uiState.update {
                     it.copy(
-                        comics = it.comics + next.filterNot { c -> c.id in blockedIds.value || c.author in blockedAuthors.value },
+                        comics = it.comics + newComics,
                         loadingMore = false,
-                        endReached = next.isEmpty()
+                        endReached = next.isEmpty() || newComics.isEmpty()
                     )
                 }
             } catch (e: Exception) {

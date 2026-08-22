@@ -15,6 +15,7 @@ fun JsonElement?.opt(): String = when {
     isJsonPrimitive ->
         if (asJsonPrimitive.isString) asJsonPrimitive.asString
         else asJsonPrimitive.asNumber.toString()
+    isJsonArray -> asJsonArray.joinToString(", ") { it.opt() }
     else -> toString()
 }
 

@@ -72,4 +72,11 @@ class ComicCacheStore(context: Context) {
     }
 
     fun totalSize(): Long = if (root.isDirectory) root.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+
+    suspend fun clearAll() {
+        root.deleteRecursively()
+        appContext.cacheDataStore.edit { p ->
+            p[keyCacheList] = "[]"
+        }
+    }
 }

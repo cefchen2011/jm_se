@@ -21,7 +21,9 @@ data class HomeUiState(
     val hotTags: List<String> = emptyList(),
     val endReached: Boolean = false,
     /** 已收藏的漫画 id（用于长按菜单显示"加入/取消收藏"） */
-    val favoriteIds: Set<String> = emptySet()
+    val favoriteIds: Set<String> = emptySet(),
+    /** 已关注的作者名 */
+    val followedAuthorIds: Set<String> = emptySet()
 )
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
@@ -56,6 +58,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             store.blockedAuthorsFlow().collect { a ->
                 blockedAuthors.value = a.toSet()
                 _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.author in blockedAuthors.value }) }
+            }
+        }
+        viewModelScope.launch {
+            store.followedAuthorsFlow().collect { a ->
+                _uiState.update { it.copy(followedAuthorIds = a.toSet()) }
             }
         }
         refresh()
@@ -124,6 +131,17 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.addBlockedAuthor(author)
             _uiState.update { it.copy(comics = it.comics.filterNot { c -> c.author == author }) }
+        }
+    }
+
+    /** 关注 / 取消关注作者 */
+    fun toggleFollowAuthor(author: String) {
+        viewModelScope.launch {
+            if (_uiState.value.followedAuthorIds.contains(author)) {
+                store.removeFollowedAuthor(author)
+            } else {
+                store.addFollowedAuthor(author)
+            }
         }
     }
 }

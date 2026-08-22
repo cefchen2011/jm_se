@@ -12,6 +12,7 @@ import com.comicreader.data.model.HistoryEntry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -79,7 +80,46 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         val idx = s.chapters.indexOfFirst { it.id == s.currentChapter?.id }
         if (idx < 0) return
         val target = s.chapters.getOrNull(idx + delta) ?: return
+        saveCurrentPage()
         openChapter(target)
+    }
+
+    private var lastPage = 0
+
+    suspend fun getSavedPage(comicId: String, chapterId: String): Int {
+        return store.historyFlow().first()
+            .firstOrNull { it.comicId == comicId && it.chapterId == chapterId }
+            ?.currentPage ?: 0
+    }
+
+    fun setCurrentPage(page: Int) {
+        lastPage = page
+    }
+
+    fun saveCurrentPage() {
+        val s = _uiState.value
+        if (s.current == null) return
+        viewModelScope.launch {
+            val total = s.current.images.size
+            val page = lastPage.coerceIn(0, (total - 1).coerceAtLeast(0))
+            val singleChapter = s.chapters.size <= 1
+            val finished = singleChapter && page >= total - 2  // 划到底部附近就标记已读完
+            store.recordProgress(
+                HistoryEntry(
+                    comicId = s.comicId,
+                    comicName = s.detail?.name ?: "",
+                    cover = s.detail?.cover ?: "",
+                    author = s.detail?.author ?: "",
+                    chapterId = s.currentChapter?.id ?: "",
+                    chapterName = s.currentChapter?.name ?: s.current?.name ?: "",
+                    sort = s.currentChapter?.sort ?: 0,
+                    finished = finished,
+                    totalChapters = s.chapters.size,
+                    currentPage = page,
+                    totalPages = total
+                )
+            )
+        }
     }
 
     private suspend fun record(detail: ComicDetail?, images: ChapterImages, chapter: Chapter, comicId: String) {
@@ -97,7 +137,9 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                 chapterId = chapter.id,
                 chapterName = chapter.name.ifBlank { images.name },
                 sort = chapter.sort,
-                finished = finished
+                finished = finished,
+                totalChapters = chapters.size,
+                totalPages = images.images.size
             )
         )
     }

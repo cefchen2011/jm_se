@@ -62,8 +62,8 @@ fun SettingsScreen(navController: NavHostController) {
 
     // 待导出的 JSON（点击导出时异步生成，SAF 回调里写入）
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
-    // 待导入的 JSON（读取后弹确认）
     var pendingImportJson by remember { mutableStateOf<String?>(null) }
+    var pendingCacheExport by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -97,6 +97,25 @@ fun SettingsScreen(navController: NavHostController) {
                 hint = "文件读取失败或为空"
             }
         }
+    }
+
+    val cacheExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        if (uri != null && pendingCacheExport) {
+            scope.launch {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        val tmpFile = java.io.File(context.cacheDir, "cache_export.zip")
+                        vm.exportCacheZip(tmpFile)
+                        tmpFile.inputStream().use { it.copyTo(out) }
+                        tmpFile.delete()
+                    }
+                }.onSuccess { hint = "缓存导出成功" }
+                    .onFailure { hint = "导出失败：${it.message}" }
+            }
+        }
+        pendingCacheExport = false
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -237,7 +256,7 @@ fun SettingsScreen(navController: NavHostController) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             ) {
-                Text("导出数据（收藏 / 历史 / 屏蔽）")
+                Text("导出数据（收藏 / 历史 / 屏蔽 / 关注 / 缓存清单）")
             }
             OutlinedButton(
                 onClick = { importLauncher.launch("application/json") },
@@ -246,11 +265,52 @@ fun SettingsScreen(navController: NavHostController) {
                 Text("导入数据")
             }
             Text(
-                text = "导入会覆盖当前全部收藏、历史与屏蔽记录",
+                text = "导入会覆盖当前全部收藏、历史、屏蔽、关注记录",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
             )
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "清除数据",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            OutlinedButton(
+                onClick = { vm.clearAllData() },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Text("清除全部数据（收藏 / 历史 / 屏蔽 / 关注）")
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "离线缓存",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            val cacheSize = remember { vm.cacheSize() }
+            Text(
+                text = "缓存大小：${formatSize(cacheSize)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+                onClick = { vm.clearCache() },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Text("清除全部离线缓存")
+            }
+            OutlinedButton(
+                onClick = {
+                    pendingCacheExport = true
+                    cacheExportLauncher.launch("comicreader-cache.zip")
+                },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Text("导出缓存（ZIP）")
+            }
 
             // 提示
             hint?.let {
@@ -283,6 +343,13 @@ fun SettingsScreen(navController: NavHostController) {
             }
         )
     }
+}
+
+private fun formatSize(bytes: Long): String = when {
+    bytes < 1024 -> "${bytes} B"
+    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+    bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes.toDouble() / (1024 * 1024))} MB"
+    else -> "${"%.1f".format(bytes.toDouble() / (1024 * 1024 * 1024))} GB"
 }
 
 @OptIn(ExperimentalLayoutApi::class)
